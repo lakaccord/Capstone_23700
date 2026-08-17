@@ -1,74 +1,75 @@
 {{ config(
-    materialized='incremental',
-    incremental_strategy='merge',
-    unique_key='employee_id'
+    materialized='table'
 ) }}
 
-
-WITH snapshot_employees AS (
+WITH source_data AS (
 
     SELECT
-
-        employee_id,
-        last_modified_date,
-        raw_employee_data,
-
         SOURCE_FILE,
+        ROW_NUMBER,
+        RAW_DATA,
         LOADED_AT,
-        BATCH_ID,
-
-        DBT_VALID_FROM,
-        DBT_VALID_TO
-
+        BATCH_ID
     FROM {{ ref('bronze_employees') }}
-
-    /*
-        The snapshot contains historical versions of employees.
-
-        Only retain the currently active version of each employee.
-    */
-    WHERE DBT_VALID_TO IS NULL
-
-    {% if is_incremental() %}
-
-        AND last_modified_date >= (
-            SELECT COALESCE(
-                MAX(last_modified_date),
-                '1900-01-01'::TIMESTAMP_NTZ
-            )
-            FROM {{ this }}
-        )
-
-    {% endif %}
 
 ),
 
+/*
+   1. FLATTEN THE EMPLOYEES ARRAY
+*/
+
+flattened AS (
+
+    SELECT
+        s.SOURCE_FILE,
+        s.ROW_NUMBER,
+        s.LOADED_AT,
+        s.BATCH_ID,
+
+        employee.value AS employee_data
+
+    FROM source_data s,
+
+    LATERAL FLATTEN(
+        INPUT => s.RAW_DATA:employees_data
+    ) AS employee
+
+),
 
 /*
-    CLEAN + STANDARDIZE EMPLOYEE ATTRIBUTES
+   2. EXTRACT + CLEAN + STANDARDIZE
 */
+
 cleaned AS (
 
     SELECT
 
+        SOURCE_FILE,
+        ROW_NUMBER,
+        LOADED_AT,
+        BATCH_ID,
+
+
         /*
-            EMPLOYEE ID
+           EMPLOYEE ID
         */
+
         NULLIF(
             TRIM(
-                employee_id
+                employee_data:employee_id::VARCHAR
             ),
             ''
         ) AS employee_id,
 
 
         /*
-            FIRST NAME
+           FIRST NAME
         */
+
         INITCAP(
             REGEXP_REPLACE(
                 TRIM(
-                    raw_employee_data:first_name::VARCHAR
+                    employee_data:first_name::VARCHAR
                 ),
                 '[^A-Za-z0-9 ''-]',
                 ''
@@ -77,12 +78,13 @@ cleaned AS (
 
 
         /*
-            LAST NAME
+           LAST NAME
         */
+
         INITCAP(
             REGEXP_REPLACE(
                 TRIM(
-                    raw_employee_data:last_name::VARCHAR
+                    employee_data:last_name::VARCHAR
                 ),
                 '[^A-Za-z0-9 ''-]',
                 ''
@@ -91,16 +93,14 @@ cleaned AS (
 
 
         /*
-            EMAIL
-
-            Valid emails are standardized to lowercase.
-            Invalid emails are converted to NULL.
+           EMAIL
         */
+
         CASE
             WHEN REGEXP_LIKE(
                 LOWER(
                     TRIM(
-                        raw_employee_data:email::VARCHAR
+                        employee_data:email::VARCHAR
                     )
                 ),
                 '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$',
@@ -108,7 +108,7 @@ cleaned AS (
             )
             THEN LOWER(
                 TRIM(
-                    raw_employee_data:email::VARCHAR
+                    employee_data:email::VARCHAR
                 )
             )
             ELSE NULL
@@ -116,13 +116,14 @@ cleaned AS (
 
 
         /*
-            INVALID EMAIL FLAG
+           INVALID EMAIL FLAG
         */
+
         CASE
             WHEN REGEXP_LIKE(
                 LOWER(
                     TRIM(
-                        raw_employee_data:email::VARCHAR
+                        employee_data:email::VARCHAR
                     )
                 ),
                 '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$',
@@ -134,23 +135,16 @@ cleaned AS (
 
 
         /*
-            PHONE
-
-            US phone number normalization.
-
-            Accepted:
-                10 digits
-                11 digits beginning with 1
-
-            Output:
-                (XXX) XXX-XXXX
+           PHONE
+           US FORMAT: (XXX) XXX-XXXX
         */
+
         CASE
 
             WHEN LENGTH(
                 REGEXP_REPLACE(
                     TRIM(
-                        raw_employee_data:phone::VARCHAR
+                        employee_data:phone::VARCHAR
                     ),
                     '[^0-9]',
                     ''
@@ -162,7 +156,7 @@ cleaned AS (
                 SUBSTR(
                     REGEXP_REPLACE(
                         TRIM(
-                            raw_employee_data:phone::VARCHAR
+                            employee_data:phone::VARCHAR
                         ),
                         '[^0-9]',
                         ''
@@ -174,7 +168,7 @@ cleaned AS (
                 SUBSTR(
                     REGEXP_REPLACE(
                         TRIM(
-                            raw_employee_data:phone::VARCHAR
+                            employee_data:phone::VARCHAR
                         ),
                         '[^0-9]',
                         ''
@@ -186,7 +180,7 @@ cleaned AS (
                 SUBSTR(
                     REGEXP_REPLACE(
                         TRIM(
-                            raw_employee_data:phone::VARCHAR
+                            employee_data:phone::VARCHAR
                         ),
                         '[^0-9]',
                         ''
@@ -196,11 +190,10 @@ cleaned AS (
                 )
             )
 
-
             WHEN LENGTH(
                 REGEXP_REPLACE(
                     TRIM(
-                        raw_employee_data:phone::VARCHAR
+                        employee_data:phone::VARCHAR
                     ),
                     '[^0-9]',
                     ''
@@ -210,7 +203,7 @@ cleaned AS (
             AND LEFT(
                 REGEXP_REPLACE(
                     TRIM(
-                        raw_employee_data:phone::VARCHAR
+                        employee_data:phone::VARCHAR
                     ),
                     '[^0-9]',
                     ''
@@ -223,7 +216,7 @@ cleaned AS (
                 SUBSTR(
                     REGEXP_REPLACE(
                         TRIM(
-                            raw_employee_data:phone::VARCHAR
+                            employee_data:phone::VARCHAR
                         ),
                         '[^0-9]',
                         ''
@@ -235,7 +228,7 @@ cleaned AS (
                 SUBSTR(
                     REGEXP_REPLACE(
                         TRIM(
-                            raw_employee_data:phone::VARCHAR
+                            employee_data:phone::VARCHAR
                         ),
                         '[^0-9]',
                         ''
@@ -247,10 +240,10 @@ cleaned AS (
                 SUBSTR(
                     REGEXP_REPLACE(
                         TRIM(
-                            raw_employee_data:phone::VARCHAR
-                    ),
-                    '[^0-9]',
-                    ''
+                            employee_data:phone::VARCHAR
+                        ),
+                        '[^0-9]',
+                        ''
                     ),
                     8,
                     4
@@ -263,14 +256,15 @@ cleaned AS (
 
 
         /*
-            INVALID PHONE FLAG
+           INVALID PHONE FLAG
         */
+
         CASE
 
             WHEN LENGTH(
                 REGEXP_REPLACE(
                     TRIM(
-                        raw_employee_data:phone::VARCHAR
+                        employee_data:phone::VARCHAR
                     ),
                     '[^0-9]',
                     ''
@@ -279,11 +273,10 @@ cleaned AS (
 
             THEN FALSE
 
-
             WHEN LENGTH(
                 REGEXP_REPLACE(
                     TRIM(
-                        raw_employee_data:phone::VARCHAR
+                        employee_data:phone::VARCHAR
                     ),
                     '[^0-9]',
                     ''
@@ -293,7 +286,7 @@ cleaned AS (
             AND LEFT(
                 REGEXP_REPLACE(
                     TRIM(
-                        raw_employee_data:phone::VARCHAR
+                        employee_data:phone::VARCHAR
                     ),
                     '[^0-9]',
                     ''
@@ -303,21 +296,20 @@ cleaned AS (
 
             THEN FALSE
 
-
             ELSE TRUE
 
         END AS invalid_phone_flag,
 
 
         /*
-            JOB TITLE
-
-            Source JSON field = role
+           JOB TITLE
+           Source JSON field = role
         */
+
         INITCAP(
             REGEXP_REPLACE(
                 TRIM(
-                    raw_employee_data:role::VARCHAR
+                    employee_data:role::VARCHAR
                 ),
                 '[^A-Za-z0-9 ''&/-]',
                 ''
@@ -326,12 +318,13 @@ cleaned AS (
 
 
         /*
-            DEPARTMENT
+           DEPARTMENT
         */
+
         INITCAP(
             REGEXP_REPLACE(
                 TRIM(
-                    raw_employee_data:department::VARCHAR
+                    employee_data:department::VARCHAR
                 ),
                 '[^A-Za-z0-9 ''&/-]',
                 ''
@@ -340,25 +333,26 @@ cleaned AS (
 
 
         /*
-            STORE ID
-
-            Source JSON field = work_location
+           STORE ID
+           Source JSON field = work_location
         */
+
         NULLIF(
             TRIM(
-                raw_employee_data:work_location::VARCHAR
+                employee_data:work_location::VARCHAR
             ),
             ''
         ) AS store_id,
 
 
         /*
-            HIRE DATE
+           HIRE DATE
         */
+
         TRY_TO_DATE(
             NULLIF(
                 TRIM(
-                    raw_employee_data:hire_date::VARCHAR
+                    employee_data:hire_date::VARCHAR
                 ),
                 ''
             )
@@ -366,12 +360,13 @@ cleaned AS (
 
 
         /*
-            SALARY
+           SALARY
         */
+
         TRY_TO_DECIMAL(
             NULLIF(
                 TRIM(
-                    raw_employee_data:salary::VARCHAR
+                    employee_data:salary::VARCHAR
                 ),
                 ''
             ),
@@ -381,52 +376,32 @@ cleaned AS (
 
 
         /*
-            LAST MODIFIED DATE
-
-            Keep timestamp precision rather than converting
-            the value to DATE.
+           LAST MODIFIED DATE
         */
+
         TRY_TO_TIMESTAMP_NTZ(
             NULLIF(
                 TRIM(
-                    last_modified_date::VARCHAR
+                    employee_data:last_modified_date::VARCHAR
                 ),
                 ''
             )
-        ) AS last_modified_date,
+        ) AS last_modified_date
 
-
-        /*
-            PIPELINE METADATA
-        */
-        SOURCE_FILE,
-        LOADED_AT,
-        BATCH_ID,
-
-
-        /*
-            SNAPSHOT METADATA
-        */
-        DBT_VALID_FROM,
-        DBT_VALID_TO
-
-    FROM snapshot_employees
+    FROM flattened
 
 ),
 
-
 /*
-    DERIVED ATTRIBUTES
+   3. DERIVED ATTRIBUTE
 */
+
 derived AS (
 
     SELECT
 
         e.*,
 
-        /*
-            FULL NAME
-        */
         TRIM(
             CONCAT_WS(
                 ' ',
@@ -439,62 +414,47 @@ derived AS (
 
 ),
 
-
 /*
-    FINAL SILVER EMPLOYEE TABLE
+   4. DEDUPLICATION
+
+   Natural key = employee_id
 */
-final AS (
 
-    SELECT
+deduplicated AS (
 
-        /*
-            EMPLOYEE ID
-        */
-        employee_id,
-
-
-        /*
-            PERSONAL INFORMATION
-        */
-        first_name,
-        last_name,
-        full_name,
-        email,
-        invalid_email_flag,
-        phone,
-        invalid_phone_flag,
-
-
-        /*
-            EMPLOYMENT INFORMATION
-        */
-        job_title,
-        department,
-        store_id,
-        hire_date,
-        salary,
-        last_modified_date,
-
-
-        /*
-            PIPELINE METADATA
-        */
-        SOURCE_FILE,
-        LOADED_AT,
-        BATCH_ID,
-
-
-        /*
-            SNAPSHOT METADATA
-        */
-        DBT_VALID_FROM,
-        DBT_VALID_TO
+    SELECT *
 
     FROM derived
 
+    QUALIFY ROW_NUMBER() OVER (
+
+        PARTITION BY
+            CASE
+                WHEN employee_id IS NOT NULL
+                    THEN employee_id
+
+                ELSE CONCAT(
+                    '_NULL_',
+                    SOURCE_FILE,
+                    '_',
+                    ROW_NUMBER
+                )
+            END
+
+        ORDER BY
+            last_modified_date DESC NULLS LAST,
+            LOADED_AT DESC,
+            SOURCE_FILE DESC,
+            ROW_NUMBER DESC
+
+    ) = 1
+
 )
 
+/*
+   FINAL SILVER EMPLOYEE TABLE
+*/
 
 SELECT *
 
-FROM final
+FROM deduplicated

@@ -51,9 +51,8 @@ models:
           +materialized: incremental
         Reporting:
           +schema: reporting
-        elementary:
-          +schema: ELEMENTARY
-        snapshots:
-          capstone_project:
-            +schema: "{{ env_var('DBT_SNAPSHOT_SCHEMA') }}"
+      elementary:
+        +schema: ELEMENTARY
+      snapshots:
+        +schema: "{{ env_var('DBT_SNAPSHOT_SCHEMA') }}"
   
