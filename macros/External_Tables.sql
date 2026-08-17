@@ -11,6 +11,11 @@
     (
         RAW_DATA VARIANT AS (VALUE),
         SOURCE_FILE VARCHAR AS (METADATA$FILENAME),
+        SOURCE_DATE TIMESTAMP_NTZ AS (
+            TRY_TO_TIMESTAMP_NTZ(
+                REGEXP_SUBSTR(METADATA$FILENAME, '\\d{4}-\\d{2}-\\d{2}')
+            )
+        ),
         FILE_ROW_NUMBER NUMBER AS (METADATA$FILE_ROW_NUMBER)
     )
     LOCATION = @{{ stage_name }}/Capstone_Project_Data/{{ folder_name }}/
