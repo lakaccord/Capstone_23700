@@ -63,7 +63,7 @@ dates AS (
         month,
         quarter
 
-    FROM {{ ref('Dim_date') }}
+    FROM {{ ref('Dim_Date') }}
 
 ),
 
