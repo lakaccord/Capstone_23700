@@ -37,15 +37,23 @@ clean-targets:         # directories to be removed by `dbt clean`
  
 models:
   Capstone_23700:
-      Bronze:
-        +schema: BRONZE
-        +materialized: incremental
-      Silver:
-        +schema: silver
-        +materialized: incremental
-      Gold:
-        +schema: gold
-        +materialized: incremental
-      Reporting:
-        +schema: reporting
- 
+      Stagging:
+        Bronze:
+          +schema: BRONZE
+          +materialized: incremental
+      Intermediate:
+        Silver:
+          +schema: silver
+          +materialized: incremental
+      Martz:
+        Gold:
+          +schema: gold
+          +materialized: incremental
+        Reporting:
+          +schema: reporting
+        elementary:
+          +schema: ELEMENTARY
+        snapshots:
+          capstone_project:
+            +schema: "{{ env_var('DBT_SNAPSHOT_SCHEMA') }}"
+  
