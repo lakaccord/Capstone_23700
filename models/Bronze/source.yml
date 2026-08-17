@@ -1,33 +1,36 @@
 version: 2
- 
+
 sources:
   - name: bronze
     database: CT_LAKSHYA_BATRA_DB
     schema: EXTERNAL
-    loaded_at_field: FILE_LAST_MODIFIED
-    freshness:
-      warn_after: {count: 1, period: day}
-      error_after: {count: 200, period: day}
+
     tables:
       - name: campaigns_data
         identifier: EXT_MARKETING_CAMPAIGN_DATA
+
       - name: customers_data
         identifier: EXT_CUSTOMER_DATA
+
       - name: employees_data
         identifier: EXT_EMPLOYEE_DATA
+
       - name: orders_data
         identifier: EXT_ORDER_DATA
+
       - name: products_data
         identifier: EXT_PRODUCT_DATA
+        loaded_at_field: SOURCE_DATE
         freshness:
-          warn_after: {count: 7, period: day}
-          error_after: {count: 20, period: day}
+          warn_after:
+            count: 1
+            period: day
+          error_after:
+            count: 500
+            period: day
+
       - name: stores_data
         identifier: EXT_STORE_DATA
+
       - name: suppliers_data
         identifier: EXT_SUPPLIER_DATA
-
-
-
-        
-

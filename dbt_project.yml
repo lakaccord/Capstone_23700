@@ -40,8 +40,12 @@ models:
       Bronze:
         +schema: BRONZE
         +materialized: incremental
-      silver:
+      Silver:
         +schema: silver
-      gold:
+        +materialized: incremental
+      Gold:
         +schema: gold
+        +materialized: incremental
+      Reporting:
+        +schema: reporting
  
